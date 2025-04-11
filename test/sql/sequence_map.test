@@ -12,12 +12,5 @@ Catalog Error: Scalar Function with name sequence_map does not exist!
 require sequence_map
 
 # Confirm the extension works
-query I
+statement ok
 SELECT sequence_map('Sam');
-----
-SequenceMap Sam 🐥
-
-query I
-SELECT sequence_map_openssl_version('Michael') ILIKE 'SequenceMap Michael, my linked OpenSSL version is OpenSSL%';
-----
-true

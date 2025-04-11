@@ -1,0 +1,135 @@
+# name: test/sql/sequence_map.test
+# description: test sequence_map extension
+# group: [sequence_map]
+
+# Require statement will ensure this test is run with this extension loaded
+require sequence_map
+
+# Confirm the extension works
+
+query I
+SELECT UNNEST(phred_scores('!"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHI'));
+----
+{'index': 0, 'phred': 0}
+{'index': 1, 'phred': 1}
+{'index': 2, 'phred': 2}
+{'index': 3, 'phred': 3}
+{'index': 4, 'phred': 4}
+{'index': 5, 'phred': 5}
+{'index': 6, 'phred': 6}
+{'index': 7, 'phred': 7}
+{'index': 8, 'phred': 8}
+{'index': 9, 'phred': 9}
+{'index': 10, 'phred': 10}
+{'index': 11, 'phred': 11}
+{'index': 12, 'phred': 12}
+{'index': 13, 'phred': 13}
+{'index': 14, 'phred': 14}
+{'index': 15, 'phred': 15}
+{'index': 16, 'phred': 16}
+{'index': 17, 'phred': 17}
+{'index': 18, 'phred': 18}
+{'index': 19, 'phred': 19}
+{'index': 20, 'phred': 20}
+{'index': 21, 'phred': 21}
+{'index': 22, 'phred': 22}
+{'index': 23, 'phred': 23}
+{'index': 24, 'phred': 24}
+{'index': 25, 'phred': 25}
+{'index': 26, 'phred': 26}
+{'index': 27, 'phred': 27}
+{'index': 28, 'phred': 28}
+{'index': 29, 'phred': 29}
+{'index': 30, 'phred': 30}
+{'index': 31, 'phred': 31}
+{'index': 32, 'phred': 32}
+{'index': 33, 'phred': 33}
+{'index': 34, 'phred': 34}
+{'index': 35, 'phred': 35}
+{'index': 36, 'phred': 36}
+{'index': 37, 'phred': 37}
+{'index': 38, 'phred': 38}
+{'index': 39, 'phred': 39}
+{'index': 40, 'phred': 40}
+
+
+query II
+FROM (SELECT UNNEST(phred_scores('AA?AACB@BBBFFFGGGGGGECGGGEEHGGFFGHHHCFGHHGFGHHHGHHHHHHHHFHHHFHHHHHHGHHGHGHHHHGGHGGHGGHHFGHHHHGHGHHGHGGHHEGGHFDGFHHHHHHHHHHFFGGHGHHGHHGFGGGGHHHGHHHHGHGHHGGGHHHHHGHHGFHHHGGHHFGHHHHHHHHHFFHHGFHHHHHHHGHHHHHHGHHHEHHHHHHHHGGGGGHGGGGGGGGGHHGGHGGGFGFDFGGFGHGBHFHG>eD1GGE1GHFGFF1BDGFGBHFEHG0GFHFHFFBFHHHEFFGGFGHFGGGFGFFHHHGDHHHHHHHHHHHGFAEAEEFEFHHEE?AEGEFEEFFA1B11F1CCAF1D@3@3D1>>>>'))) x(a) SELECT a.* ORDER BY a.INDEX LIMIT 20;
+----
+0	32
+1	32
+2	30
+3	32
+4	32
+5	34
+6	33
+7	31
+8	33
+9	33
+10	33
+11	37
+12	37
+13	37
+14	38
+15	38
+16	38
+17	38
+18	38
+19	38
+
+query III
+WITH phred_values as (FROM (VALUES('AA?AACB@BBBFFFGGGGGGECGGGEEHGGFFGHHHCFGHHGFGHHHGHHHHHHHHFHHHFHHHHHHGHHGHGHHHHGGHGGHGGHHFGHHHHGHGHHGHGGHHEGGHFDGFHHHHHHHHHHFFGGHGHHGHHGFGGGGHHHGHHHHGHGHHGGGHHHHHGHHGFHHHGGHHFGHHHHHHHHHFFHHGFHHHHHHHGHHHHHHGHHHEHHHHHHHHGGGGGHGGGGGGGGGHHGGHGGGFGFDFGGFGHGBHFHG>eD1GGE1GHFGFF1BDGFGBHFEHG0GFHFHFFBFHHHEFFGGFGHFGGGFGFFHHHGDHHHHHHHHHHHGFAEAEEFEFHHEE?AEGEFEEFFA1B11F1CCAF1D@3@3D1>>>>'))x(phred_string)),
+scores AS (SELECT UNNEST(phred_scores(phred_string)) score FROM phred_values),
+buckets AS (SELECT score.index, IF(score.index < 10, score.index, score.index//10+9) bucket, score.phred FROM scores),
+aggregates AS (SELECT bucket, QUANTILE(phred, [0.1, 0.25, 0.5, 0.75, 0.9]) quantiles, COUNT(*) n, MIN(index) min_idx, MAX(INDEX) max_idx FROM buckets GROUP BY bucket)
+SELECT if (bucket < 10, bucket::VARCHAR, min_idx || '-' || max_idx) bucket_str, n, quantiles FROM aggregates ORDER BY bucket;
+----
+0	1	[32, 32, 32, 32, 32]
+1	1	[32, 32, 32, 32, 32]
+2	1	[30, 30, 30, 30, 30]
+3	1	[32, 32, 32, 32, 32]
+4	1	[32, 32, 32, 32, 32]
+5	1	[34, 34, 34, 34, 34]
+6	1	[33, 33, 33, 33, 33]
+7	1	[31, 31, 31, 31, 31]
+8	1	[33, 33, 33, 33, 33]
+9	1	[33, 33, 33, 33, 33]
+10-19	10	[33, 37, 38, 38, 38]
+20-29	10	[34, 36, 38, 38, 38]
+30-39	10	[34, 37, 38, 39, 39]
+40-49	10	[37, 38, 39, 39, 39]
+50-59	10	[37, 39, 39, 39, 39]
+60-69	10	[37, 39, 39, 39, 39]
+70-79	10	[38, 38, 39, 39, 39]
+80-89	10	[37, 38, 38, 39, 39]
+90-99	10	[38, 38, 39, 39, 39]
+100-109	10	[35, 37, 38, 39, 39]
+110-119	10	[37, 39, 39, 39, 39]
+120-129	10	[37, 38, 38, 39, 39]
+130-139	10	[37, 38, 38, 39, 39]
+140-149	10	[38, 38, 39, 39, 39]
+150-159	10	[38, 38, 39, 39, 39]
+160-169	10	[37, 38, 38, 39, 39]
+170-179	10	[37, 39, 39, 39, 39]
+180-189	10	[37, 37, 39, 39, 39]
+190-199	10	[38, 39, 39, 39, 39]
+200-209	10	[36, 39, 39, 39, 39]
+210-219	10	[38, 38, 39, 39, 39]
+220-229	10	[38, 38, 38, 38, 38]
+230-239	10	[37, 38, 38, 39, 39]
+240-249	10	[35, 37, 38, 38, 38]
+250-259	10	[16, 33, 37, 39, 39]
+260-269	10	[16, 36, 37, 38, 38]
+270-279	10	[33, 35, 37, 38, 39]
+280-289	10	[15, 37, 37, 38, 39]
+290-299	10	[36, 37, 37, 39, 39]
+300-309	10	[37, 37, 38, 38, 38]
+310-319	10	[35, 39, 39, 39, 39]
+320-329	10	[32, 37, 39, 39, 39]
+330-339	10	[32, 36, 36, 37, 39]
+340-349	10	[30, 36, 36, 37, 37]
+350-359	10	[16, 16, 32, 34, 34]
+360-369	10	[16, 18, 29, 35, 35]
+370-372	3	[29, 29, 29, 29, 29]
+
+

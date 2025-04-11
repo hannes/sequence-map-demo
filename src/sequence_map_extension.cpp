@@ -6,7 +6,8 @@
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension_util.hpp"
-#include <duckdb/parser/parsed_data/create_scalar_function_info.hpp>
+#include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
+#include "duckdb/common/vector_operations/generic_executor.hpp"
 
 namespace duckdb {
 
@@ -118,21 +119,52 @@ const char *Perfect_Hash::in_word_set(const char *str, unsigned int len) {
   return 0;
 }
 
-static char sequence_map_lookup_table[MAX_HASH_VALUE];
+static char sequence_map_lookup_table[1024];
 
 inline void SequenceMapScalarFun(DataChunk &args, ExpressionState &state,
                                  Vector &result) {
 
-  auto &name_vector = args.data[0];
   UnaryExecutor::Execute<string_t, string_t>(
-      name_vector, result, args.size(), [&](string_t in) {
+      args.data[0], result, args.size(), [&](string_t in) {
         auto res = StringVector::EmptyString(result, in.GetSize() / 3);
         auto res_ptr = res.GetDataWriteable();
         auto in_ptr = in.GetDataUnsafe();
 
         for (idx_t i = 0; i < in.GetSize() / 3; i++) {
-          res_ptr[i] =
-              sequence_map_lookup_table[Perfect_Hash::hash(in_ptr + i * 3, 3)];
+          auto hash = Perfect_Hash::hash(in_ptr + i * 3, 3);
+          if (hash > MAX_HASH_VALUE) {
+            throw InvalidInputException("Non-Hashable Input");
+          }
+          res_ptr[i] = sequence_map_lookup_table[hash];
+        }
+        return res;
+      });
+}
+
+using PHRED_MAP_ENTRY_TYPE =
+    StructTypeBinary<PrimitiveType<int64_t>, PrimitiveType<int64_t>>;
+using PHRED_LIST_TYPE = GenericListType<PHRED_MAP_ENTRY_TYPE>;
+
+inline void PhredScoresBucketedFunction(DataChunk &args, ExpressionState &state,
+                                        Vector &result) {
+  // TODO we only need to create the vector once, then we can update
+  GenericExecutor::ExecuteUnary<PrimitiveType<string_t>, PHRED_LIST_TYPE>(
+      args.data[0], result, args.size(), [&](PrimitiveType<string_t> input) {
+        PHRED_LIST_TYPE res;
+        // TODO cache the vector;
+        // TODO bucketing here?
+        for (idx_t str_idx = 0; str_idx < input.val.GetSize(); ++str_idx) {
+          PHRED_MAP_ENTRY_TYPE entry;
+          entry.a_val.val = str_idx;
+          auto in_char = input.val.GetDataUnsafe()[str_idx];
+          auto val = toascii(in_char) - 33;
+          entry.b_val.val = 100; // how do we handle invalid phred entries?
+
+          if (val >= 0 && val <= 40) {
+            entry.b_val.val = val;
+          }
+
+          res.values.push_back(entry);
         }
         return res;
       });
@@ -166,6 +198,14 @@ static void LoadInternal(DatabaseInstance &instance) {
       ScalarFunction("sequence_map", {LogicalType::VARCHAR},
                      LogicalType::VARCHAR, SequenceMapScalarFun);
   ExtensionUtil::RegisterFunction(instance, sequence_map_scalar_function);
+
+  auto phred_scores_bucketed_scalar_function = ScalarFunction(
+      "phred_scores", {LogicalType::VARCHAR},
+      LogicalType::LIST(LogicalType::STRUCT(
+          {{"index", LogicalType::BIGINT}, {"phred", LogicalType::BIGINT}})),
+      PhredScoresBucketedFunction);
+  ExtensionUtil::RegisterFunction(instance,
+                                  phred_scores_bucketed_scalar_function);
 }
 
 void SequenceMapExtension::Load(DuckDB &db) { LoadInternal(*db.instance); }
